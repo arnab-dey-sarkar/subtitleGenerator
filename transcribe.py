@@ -1,13 +1,16 @@
 import os
-from moviepy.editor import VideoFileClip
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["OMP_NUM_THREADS"] = "1"
+from moviepy import VideoFileClip
 import torch
 import whisper
 
 # Function: Extract audio from a video file
 def extract_audio(video_path, audio_output_path):
     try:
-        video = VideoFileClip(video_path)
-        video.audio.write_audiofile(audio_output_path)
+        # Use a context manager to automatically close the file after extraction
+        with VideoFileClip(video_path) as video:
+            video.audio.write_audiofile(audio_output_path)
         print(f"Audio has been extracted and saved as: {audio_output_path}")
     except Exception as e:
         print(f"Error extracting audio: {e}")
@@ -24,6 +27,7 @@ def transcribe_audio(audio_path, model_type="large"):
         model = whisper.load_model(model_type, device=device)
 
         # Transcribe audio
+        print("Starting transcription (this may take a while)...")
         result = model.transcribe(audio_path)
         print("Transcription completed!")
         return result
@@ -44,7 +48,7 @@ def save_subtitles(segments, output_path):
             for i, segment in enumerate(segments):
                 start = segment["start"]
                 end = segment["end"]
-                text = segment["text"]
+                text = segment["text"].strip()
 
                 srt_file.write(f"{i+1}\n")
                 srt_file.write(f"{format_timestamp(start)} --> {format_timestamp(end)}\n")
@@ -55,10 +59,12 @@ def save_subtitles(segments, output_path):
 
 # Main workflow
 def main():
+    # Define video_path outside the block to ensure error messages can read it safely
+    video_path = ""
     try:
         # Paths
-        downloads_folder = os.path.expanduser("~/Downloads/Torrents")  # Path to Downloads folder
-        video_filename = "Thunderbolts.mp4"  # Replace with the name of your video file
+        downloads_folder = os.path.expanduser("~/Downloads/Torrents")
+        video_filename = "Masters.of.the.Universe.mkv"
         video_path = os.path.join(downloads_folder, video_filename)
         audio_output_path = os.path.join(downloads_folder, "extracted_audio.mp3")
         subtitle_output_path = os.path.join(downloads_folder, "generated_subtitles.srt")
@@ -66,9 +72,14 @@ def main():
         # Whisper model type: Use "large" for highest transcription accuracy
         model_type = "large"
 
+        # Safety check: Prevent running if the source video is missing
+        if not os.path.exists(video_path):
+            print(f"Error: The video file does not exist at {video_path}")
+            return
+
         # Step 1: Extract audio from the video
         print("\n=== Step 1: Extracting audio ===")
-        # extract_audio(video_path, audio_output_path)
+        extract_audio(video_path, audio_output_path)
 
         # Step 2: Transcribe audio to text using Whisper
         print("\n=== Step 2: Transcribing audio ===")
@@ -83,8 +94,6 @@ def main():
         save_subtitles(result["segments"], subtitle_output_path)
 
         print("\nProcess completed successfully!")
-    except FileNotFoundError:
-        print(f"File not found: {video_path}. Please check the filename and path!")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
 
